@@ -1,0 +1,172 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "chatId": "6810110831",
+        "text": "=🚨 **PRO SİNYAL: {{ $json.signal }}** 🚨\n\n📌 **Sebep:** {{ $json.detail }}\n🎯 **Trend:** {{ $json.trend }}\n💪 **Güç (ADX):** {{ $json.ADX }}\n\n🪙 **Varlık:** {{ $json.symbol }}\n💰 **Fiyat:** ${{ $json.currentPrice }}\n📊 **RSI:** {{ $json.RSI }}\n📉 **MACD:** {{ $json.MACD }}\n📈 **Hacim:** {{ $json.volumeStatus }}\n\n🛡️ **RİSK YÖNETİMİ:**\n🔴 Stop-Loss: ${{ $json.stopLoss }}\n🟢 TP1 (1:1.5): ${{ $json.takeProfit1 }}\n🟢 TP2 (1:2.5): ${{ $json.takeProfit2 }}\n⚠️ Risk: {{ $json.riskPercent }}%\n\n⏰ Zaman: {{ $json.timestamp }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "02b09099-6ee5-4601-94d7-6c3edbc48552",
+      "name": "Telegram Mesaj At",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        176,
+        -1216
+      ],
+      "webhookId": "bcca8ba9-8169-453e-b952-6694ad9fdd44",
+      "credentials": {
+        "telegramApi": {
+          "id": "3yBfU3uy4gfRQ4Tm",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.binance.com/api/v3/klines?symbol={{ $json.symbol }}&interval=1h&limit=250",
+        "options": {}
+      },
+      "name": "Binance Klines Al",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -496,
+        -1216
+      ],
+      "executeOnce": false,
+      "id": "afc20711-89b7-43b5-9f69-7fd86eada2a3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst coins = $(\"110 Coini Belirle\").all();\n\n// ============================================\n// 🔧 YARDIMCI FONKSİYONLAR\n// ============================================\n\nfunction calcSMA(data, period) {\n    let smaArray = new Array(data.length).fill(null);\n    for (let i = period - 1; i < data.length; i++) {\n        let sum = 0;\n        for (let j = 0; j < period; j++) {\n            sum += data[i - j] || 0;\n        }\n        smaArray[i] = sum / period;\n    }\n    return smaArray;\n}\n\nfunction calcEMA(data, period) {\n    let k = 2 / (period + 1);\n    let emaArray = new Array(data.length).fill(null);\n    let sum = 0;\n    let validCount = 0;\n    \n    for (let i = 0; i < period && i < data.length; i++) {\n        if (data[i] !== null && data[i] !== undefined) {\n            sum += data[i];\n            validCount++;\n        }\n    }\n    \n    if (validCount < period) return emaArray;\n    emaArray[period - 1] = sum / period;\n    \n    for (let i = period; i < data.length; i++) {\n        if (data[i] !== null && emaArray[i - 1] !== null) {\n            emaArray[i] = (data[i] * k) + (emaArray[i - 1] * (1 - k));\n        }\n    }\n    return emaArray;\n}\n\nfunction calcRSI(data, period) {\n    let rsiArray = new Array(data.length).fill(null);\n    if (data.length < period + 1) return rsiArray;\n    \n    let gains = 0, losses = 0;\n    for (let i = 1; i <= period; i++) {\n        let diff = data[i] - data[i - 1];\n        if (diff > 0) gains += diff;\n        else losses += Math.abs(diff);\n    }\n    \n    let avgGain = gains / period;\n    let avgLoss = losses / period;\n    \n    if (avgLoss === 0) rsiArray[period] = 100;\n    else rsiArray[period] = 100 - (100 / (1 + (avgGain / avgLoss)));\n    \n    for (let i = period + 1; i < data.length; i++) {\n        let diff = data[i] - data[i - 1];\n        let currentGain = diff > 0 ? diff : 0;\n        let currentLoss = diff < 0 ? Math.abs(diff) : 0;\n        \n        avgGain = ((avgGain * (period - 1)) + currentGain) / period;\n        avgLoss = ((avgLoss * (period - 1)) + currentLoss) / period;\n        \n        if (avgLoss === 0) rsiArray[i] = 100;\n        else rsiArray[i] = 100 - (100 / (1 + (avgGain / avgLoss)));\n    }\n    return rsiArray;\n}\n\nfunction calcATR(highs, lows, closes, period) {\n    let trArray = [0];\n    for (let i = 1; i < closes.length; i++) {\n        let hl = highs[i] - lows[i];\n        let hc = Math.abs(highs[i] - closes[i - 1]);\n        let lc = Math.abs(lows[i] - closes[i - 1]);\n        trArray.push(Math.max(hl, hc, lc));\n    }\n    return calcSMA(trArray, period);\n}\n\nfunction calcADX(highs, lows, closes, period) {\n    if (closes.length < period * 2) return new Array(closes.length).fill(null);\n    \n    let plusDM = [0], minusDM = [0], tr = [0];\n    \n    for (let i = 1; i < closes.length; i++) {\n        let upMove = highs[i] - highs[i - 1];\n        let downMove = lows[i - 1] - lows[i];\n        \n        plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);\n        minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);\n        \n        let hl = highs[i] - lows[i];\n        let hc = Math.abs(highs[i] - closes[i - 1]);\n        let lc = Math.abs(lows[i] - closes[i - 1]);\n        tr.push(Math.max(hl, hc, lc));\n    }\n    \n    let smoothedTR = calcEMA(tr, period);\n    let smoothedPlusDM = calcEMA(plusDM, period);\n    let smoothedMinusDM = calcEMA(minusDM, period);\n    \n    let plusDI = [], minusDI = [], dx = [];\n    \n    for (let i = 0; i < closes.length; i++) {\n        if (smoothedTR[i] && smoothedTR[i] !== 0) {\n            plusDI.push((smoothedPlusDM[i] / smoothedTR[i]) * 100);\n            minusDI.push((smoothedMinusDM[i] / smoothedTR[i]) * 100);\n            let diSum = plusDI[i] + minusDI[i];\n            dx.push(diSum !== 0 ? (Math.abs(plusDI[i] - minusDI[i]) / diSum) * 100 : 0);\n        } else {\n            plusDI.push(0);\n            minusDI.push(0);\n            dx.push(0);\n        }\n    }\n    \n    return calcEMA(dx, period);\n}\n\n// ============================================\n// 🚀 ANA İŞLEM DÖNGÜSÜ\n// ============================================\n\nlet results = [];\nlet chunkSize = Math.floor(items.length / coins.length);\n\nfor (let c = 0; c < coins.length; c++) {\n    try {\n        let symbol = coins[c].json.symbol;\n        let closes = [], highs = [], lows = [], volumes = [];\n        \n        // Veriyi çek ve doğrula\n        for (let i = 0; i < chunkSize; i++) {\n            let idx = (c * chunkSize) + i;\n            if (!items[idx] || !items[idx].json) continue;\n            \n            let k = items[idx].json;\n            let high = parseFloat(k[\"2\"] !== undefined ? k[\"2\"] : k[2]);\n            let low = parseFloat(k[\"3\"] !== undefined ? k[\"3\"] : k[3]);\n            let close = parseFloat(k[\"4\"] !== undefined ? k[\"4\"] : k[4]);\n            let volume = parseFloat(k[\"5\"] !== undefined ? k[\"5\"] : k[5]);\n            \n            if (!isNaN(close) && !isNaN(high) && !isNaN(low)) {\n                closes.push(close);\n                highs.push(high);\n                lows.push(low);\n                volumes.push(isNaN(volume) ? 0 : volume);\n            }\n        }\n        \n        // Minimum veri kontrolü (200 EMA için en az 210 mum gerekli)\n        if (closes.length < 210) {\n            continue;\n        }\n        \n        let currentPrice = closes[closes.length - 1];\n        let currIdx = closes.length - 1;\n        let prevIdx = currIdx - 1;\n        \n        // ============================================\n        // 📊 İNDİKATÖRLERİ HESAPLA\n        // ============================================\n        \n        // RSI (14)\n        let rsiArr = calcRSI(closes, 14);\n        let currRsi = rsiArr[currIdx];\n        let prevRsi = rsiArr[prevIdx];\n        \n        // MACD (12, 26, 9)\n        let ema12 = calcEMA(closes, 12);\n        let ema26 = calcEMA(closes, 26);\n        let macdLine = [];\n        for (let i = 0; i < closes.length; i++) {\n            if (ema12[i] !== null && ema26[i] !== null) {\n                macdLine.push(ema12[i] - ema26[i]);\n            } else {\n                macdLine.push(null);\n            }\n        }\n        let signalLine = calcEMA(macdLine.filter(x => x !== null), 9);\n        \n        // Signal line'ı doğru indekse hizala\n        let macdValid = macdLine.filter(x => x !== null);\n        let currMacd = macdValid[macdValid.length - 1];\n        let prevMacd = macdValid[macdValid.length - 2];\n        let currSig = signalLine[signalLine.length - 1];\n        let prevSig = signalLine[signalLine.length - 2];\n        \n        // EMA 200 (Trend Filtresi)\n        let ema200 = calcEMA(closes, 200);\n        let currEma200 = ema200[currIdx];\n        let isUptrend = currentPrice > currEma200;\n        let isDowntrend = currentPrice < currEma200;\n        let trendStrength = ((currentPrice - currEma200) / currEma200 * 100).toFixed(2);\n        \n        // ADX (14) - Trend Gücü - ESNEK EŞİKLER\n        let adxArr = calcADX(highs, lows, closes, 14);\n        let currADX = adxArr[currIdx] || 0;\n        let isTrending = currADX > 18;      // ESKİ: 25, YENİ: 18\n        let isStrongTrend = currADX > 30;   // ESKİ: 40, YENİ: 30\n        \n        // ATR (14) - Volatilite & SL/TP\n        let atrArr = calcATR(highs, lows, closes, 14);\n        let currATR = atrArr[currIdx] || 0;\n        \n        // Hacim Analizi\n        let volMA20 = calcSMA(volumes, 20);\n        let currVolume = volumes[currIdx];\n        let avgVolume = volMA20[currIdx] || 1;\n        let volumeRatio = currVolume / avgVolume;\n        let volumeConfirm = volumeRatio > 1.1;  // ESKİ: 1.2, YENİ: 1.1\n        let volumeStatus = volumeRatio > 1.5 ? \"🔥 Çok Yüksek\" : \n                          volumeRatio > 1.1 ? \"✅ Yüksek\" : \n                          volumeRatio > 0.7 ? \"➖ Normal\" : \"⚠️ Düşük\";\n        \n        // ============================================\n        // 🎯 PRO SİNYAL STRATEJİSİ (GEVŞETİLMİŞ)\n        // ============================================\n        \n        // MACD Kesişimleri\n        let macdBullCross = prevMacd <= prevSig && currMacd > currSig;\n        let macdBearCross = prevMacd >= prevSig && currMacd < currSig;\n        \n        // RSI Kesişimleri (ESNEK)\n        let rsiBullCross = prevRsi <= 35 && currRsi > 35;  // ESKİ: 30, YENİ: 35\n        let rsiBearCross = prevRsi >= 65 && currRsi < 65;  // ESKİ: 70, YENİ: 65\n        \n        // RSI Bölgeleri\n        let rsiOversold = currRsi < 40;\n        let rsiOverbought = currRsi > 60;\n        \n        let signal = \"BEKLE\";\n        let detail = \"\";\n        let confidence = 0;\n        \n        // ============================================\n        // 🟢 AL SİNYALİ KOŞULLARI (GEVŞETİLMİŞ)\n        // ============================================\n        \n        // GÜÇLÜ AL: MACD kesişimi + Uptrend + RSI uygun\n        if (macdBullCross && isUptrend && currRsi < 70) {\n            signal = \"💎 GÜÇLÜ AL\";\n            detail = \"MACD Kesişimi + Uptrend\";\n            confidence = 80;\n            if (isTrending) {\n                detail += \" + Trend Güçlü\";\n                confidence += 10;\n            }\n            if (volumeConfirm) {\n                detail += \" + Hacim\";\n                confidence += 5;\n            }\n        }\n        // ORTA AL: RSI dipten çıkış + Uptrend\n        else if (rsiBullCross && isUptrend) {\n            signal = \"🟢 AL\";\n            detail = \"RSI Dipten Çıkış + Uptrend\";\n            confidence = 70;\n            if (isTrending) confidence += 10;\n        }\n        // ZAYIF AL: MACD kesişimi (trend ne olursa olsun)\n        else if (macdBullCross && currRsi < 60) {\n            signal = \"🟡 ZAYIF AL\";\n            detail = \"MACD Kesişimi (Dikkatli Ol)\";\n            confidence = 55;\n        }\n        // EK: RSI aşırı satımda + MACD pozitif\n        else if (currRsi < 30 && currMacd > currSig) {\n            signal = \"🟡 ZAYIF AL\";\n            detail = \"RSI Aşırı Satım + MACD Pozitif\";\n            confidence = 50;\n        }\n        \n        // ============================================\n        // 🔴 SAT SİNYALİ KOŞULLARI (GEVŞETİLMİŞ)\n        // ============================================\n        \n        // GÜÇLÜ SAT: MACD kesişimi + Downtrend + RSI uygun\n        else if (macdBearCross && isDowntrend && currRsi > 30) {\n            signal = \"💀 GÜÇLÜ SAT\";\n            detail = \"MACD Kesişimi + Downtrend\";\n            confidence = 80;\n            if (isTrending) {\n                detail += \" + Trend Güçlü\";\n                confidence += 10;\n            }\n            if (volumeConfirm) {\n                detail += \" + Hacim\";\n                confidence += 5;\n            }\n        }\n        // ORTA SAT: RSI tepeden dönüş + Downtrend\n        else if (rsiBearCross && isDowntrend) {\n            signal = \"🔴 SAT\";\n            detail = \"RSI Tepeden Dönüş + Downtrend\";\n            confidence = 70;\n            if (isTrending) confidence += 10;\n        }\n        // ZAYIF SAT: MACD kesişimi (trend ne olursa olsun)\n        else if (macdBearCross && currRsi > 40) {\n            signal = \"🟠 ZAYIF SAT\";\n            detail = \"MACD Kesişimi (Dikkatli Ol)\";\n            confidence = 55;\n        }\n        // EK: RSI aşırı alımda + MACD negatif\n        else if (currRsi > 70 && currMacd < currSig) {\n            signal = \"🟠 ZAYIF SAT\";\n            detail = \"RSI Aşırı Alım + MACD Negatif\";\n            confidence = 50;\n        }\n        \n        // ============================================\n        // ⚠️ FİLTRELER - SADECE ÇOK RİSKLİ DURUMLAR\n        // ============================================\n        \n        // ADX çok çok düşükse (tam yatay) - iptal\n        if (currADX < 12 && signal !== \"BEKLE\") {\n            signal = \"BEKLE\";\n            detail = \"Yatay Piyasa (ADX < 12)\";\n        }\n        \n        // ============================================\n        // 🛡️ RİSK YÖNETİMİ (ATR BAZLI)\n        // ============================================\n        \n        let stopLoss, takeProfit1, takeProfit2, riskPercent;\n        \n        if (signal.includes(\"AL\")) {\n            stopLoss = (currentPrice - (currATR * 1.5)).toFixed(4);\n            takeProfit1 = (currentPrice + (currATR * 2.25)).toFixed(4);\n            takeProfit2 = (currentPrice + (currATR * 3.75)).toFixed(4);\n            riskPercent = ((currATR * 1.5) / currentPrice * 100).toFixed(2);\n        } else if (signal.includes(\"SAT\")) {\n            stopLoss = (currentPrice + (currATR * 1.5)).toFixed(4);\n            takeProfit1 = (currentPrice - (currATR * 2.25)).toFixed(4);\n            takeProfit2 = (currentPrice - (currATR * 3.75)).toFixed(4);\n            riskPercent = ((currATR * 1.5) / currentPrice * 100).toFixed(2);\n        } else {\n            stopLoss = \"-\";\n            takeProfit1 = \"-\";\n            takeProfit2 = \"-\";\n            riskPercent = \"-\";\n        }\n        \n        // ============================================\n        // 📤 SONUÇ\n        // ============================================\n        \n        results.push({\n            json: {\n                symbol: symbol,\n                currentPrice: currentPrice.toFixed(4),\n                signal: signal,\n                detail: detail,\n                confidence: confidence + \"%\",\n                \n                // İndikatörler\n                RSI: currRsi ? currRsi.toFixed(2) : \"N/A\",\n                MACD: currMacd ? currMacd.toFixed(6) : \"N/A\",\n                ADX: currADX ? currADX.toFixed(2) : \"N/A\",\n                ATR: currATR ? currATR.toFixed(4) : \"N/A\",\n                EMA200: currEma200 ? currEma200.toFixed(4) : \"N/A\",\n                \n                // Trend Bilgisi\n                trend: isUptrend ? \"📈 UPTREND (\" + trendStrength + \"%)\" : \"📉 DOWNTREND (\" + trendStrength + \"%)\",\n                trendStrength: isTrending ? (isStrongTrend ? \"💪 Çok Güçlü\" : \"✅ Güçlü\") : \"⚠️ Zayıf\",\n                \n                // Hacim\n                volumeStatus: volumeStatus,\n                volumeRatio: volumeRatio.toFixed(2) + \"x\",\n                \n                // Risk Yönetimi\n                stopLoss: stopLoss,\n                takeProfit1: takeProfit1,\n                takeProfit2: takeProfit2,\n                riskPercent: riskPercent,\n                \n                // Meta\n                timestamp: new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }),\n                timeframe: \"1H\"\n            }\n        });\n        \n    } catch (error) {\n        // Hata durumunda loglama\n        results.push({\n            json: {\n                symbol: coins[c]?.json?.symbol || \"UNKNOWN\",\n                signal: \"⚠️ HATA\",\n                detail: error.message,\n                timestamp: new Date().toLocaleString('tr-TR')\n            }\n        });\n    }\n}\n\nreturn results;\n"
+      },
+      "name": "Teknik Analiz Kodla",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -1216
+      ],
+      "id": "363ec890-3230-4b70-9fba-97ecdd2fc733"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.signal }}",
+              "operation": "notEqual",
+              "value2": "BEKLE"
+            }
+          ]
+        }
+      },
+      "name": "Sadece Al-Sat Sinyali Olanlar ( Filtre )",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -1216
+      ],
+      "id": "53061693-b260-4ebf-922e-e75405c581f2"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "6ccdcf87-6bf4-4ffd-8652-64ed137b4955",
+      "name": "1 Saatte Bir Çalış",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        -944,
+        -1216
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  // ==========================================\n  // 🇹🇷 PARİBU + BINANCE ORTAK COİNLER (110)\n  // ==========================================\n  \n  // --- TOP 20 ---\n  { json: { symbol: \"BTCUSDT\" } },\n  { json: { symbol: \"ETHUSDT\" } },\n  { json: { symbol: \"XRPUSDT\" } },\n  { json: { symbol: \"SOLUSDT\" } },\n  { json: { symbol: \"ADAUSDT\" } },\n  { json: { symbol: \"DOGEUSDT\" } },\n  { json: { symbol: \"AVAXUSDT\" } },\n  { json: { symbol: \"DOTUSDT\" } },\n  { json: { symbol: \"LINKUSDT\" } },\n  { json: { symbol: \"MATICUSDT\" } },\n  { json: { symbol: \"LTCUSDT\" } },\n  { json: { symbol: \"BCHUSDT\" } },\n  { json: { symbol: \"XLMUSDT\" } },\n  { json: { symbol: \"ETCUSDT\" } },\n  { json: { symbol: \"ATOMUSDT\" } },\n  { json: { symbol: \"UNIUSDT\" } },\n  { json: { symbol: \"HBARUSDT\" } },\n  { json: { symbol: \"ICPUSDT\" } },\n  { json: { symbol: \"FILUSDT\" } },\n  { json: { symbol: \"NEARUSDT\" } },\n  \n  // --- LAYER 1 & 2 ---\n  { json: { symbol: \"APTUSDT\" } },\n  { json: { symbol: \"ARBUSDT\" } },\n  { json: { symbol: \"OPUSDT\" } },\n  { json: { symbol: \"SUIUSDT\" } },\n  { json: { symbol: \"SEIUSDT\" } },\n  { json: { symbol: \"INJUSDT\" } },\n  { json: { symbol: \"FTMUSDT\" } },\n  { json: { symbol: \"ALGOUSDT\" } },\n  { json: { symbol: \"VETUSDT\" } },\n  { json: { symbol: \"EGLDUSDT\" } },\n  { json: { symbol: \"XTZUSDT\" } },\n  { json: { symbol: \"EOSUSDT\" } },\n  { json: { symbol: \"NEOUSDT\" } },\n  { json: { symbol: \"IOTAUSDT\" } },\n  { json: { symbol: \"ZILUSDT\" } },\n  { json: { symbol: \"FLOWUSDT\" } },\n  { json: { symbol: \"KAVAUSDT\" } },\n  { json: { symbol: \"ONEUSDT\" } },\n  { json: { symbol: \"QNTUSDT\" } },\n  { json: { symbol: \"KSMUSDT\" } },\n  { json: { symbol: \"CELOUSDT\" } },\n  { json: { symbol: \"WAVESUSDT\" } },\n  { json: { symbol: \"ONTUSDT\" } },\n  { json: { symbol: \"STXUSDT\" } },\n  { json: { symbol: \"MINAUSDT\" } },\n  { json: { symbol: \"ROSEUSDT\" } },\n  \n  // --- DEFI ---\n  { json: { symbol: \"AAVEUSDT\" } },\n  { json: { symbol: \"MKRUSDT\" } },\n  { json: { symbol: \"CRVUSDT\" } },\n  { json: { symbol: \"COMPUSDT\" } },\n  { json: { symbol: \"SNXUSDT\" } },\n  { json: { symbol: \"SUSHIUSDT\" } },\n  { json: { symbol: \"1INCHUSDT\" } },\n  { json: { symbol: \"DYDXUSDT\" } },\n  { json: { symbol: \"LRCUSDT\" } },\n  { json: { symbol: \"LDOUSDT\" } },\n  { json: { symbol: \"RUNEUSDT\" } },\n  { json: { symbol: \"CAKEUSDT\" } },\n  \n  // --- OYUN & METAVERSE ---\n  { json: { symbol: \"SANDUSDT\" } },\n  { json: { symbol: \"MANAUSDT\" } },\n  { json: { symbol: \"AXSUSDT\" } },\n  { json: { symbol: \"ENJUSDT\" } },\n  { json: { symbol: \"GALAUSDT\" } },\n  { json: { symbol: \"CHZUSDT\" } },\n  { json: { symbol: \"THETAUSDT\" } },\n  { json: { symbol: \"IMXUSDT\" } },\n  \n  // --- DATA & ALTYAPI ---\n  { json: { symbol: \"GRTUSDT\" } },\n  { json: { symbol: \"STORJUSDT\" } },\n  { json: { symbol: \"ANKRUSDT\" } },\n  { json: { symbol: \"BATUSDT\" } },\n  { json: { symbol: \"BANDUSDT\" } },\n  { json: { symbol: \"SKLUSDT\" } },\n  { json: { symbol: \"RLCUSDT\" } },\n  \n  // --- YAPAY ZEKA ---\n  { json: { symbol: \"FETUSDT\" } },\n  { json: { symbol: \"RENDERUSDT\" } },\n  { json: { symbol: \"WLDUSDT\" } },\n  { json: { symbol: \"OCEANUSDT\" } },\n  { json: { symbol: \"AGIXUSDT\" } },\n  \n  // --- MEME COİNLER ---\n  { json: { symbol: \"SHIBUSDT\" } },\n  { json: { symbol: \"PEPEUSDT\" } },\n  { json: { symbol: \"FLOKIUSDT\" } },\n  { json: { symbol: \"BONKUSDT\" } },\n  \n  // --- PRİVACY & UTİLİTY ---\n  { json: { symbol: \"ZECUSDT\" } },\n  { json: { symbol: \"DASHUSDT\" } },\n  { json: { symbol: \"TRXUSDT\" } },\n  { json: { symbol: \"HOTUSDT\" } },\n  { json: { symbol: \"IOSTUSDT\" } },\n  \n  // --- YENİ NESİL ---\n  { json: { symbol: \"TIAUSDT\" } },\n  { json: { symbol: \"JUPUSDT\" } },\n  { json: { symbol: \"STRKUSDT\" } },\n  { json: { symbol: \"WIFUSDT\" } },\n  { json: { symbol: \"ENAUSDT\" } },\n  { json: { symbol: \"PENDLEUSDT\" } },\n  \n  // --- DİĞER GÜÇLÜ PROJELEr ---\n  { json: { symbol: \"MASKUSDT\" } },\n  { json: { symbol: \"APEUSDT\" } },\n  { json: { symbol: \"GMTUSDT\" } },\n  { json: { symbol: \"WOOUSDT\" } },\n  { json: { symbol: \"RVNUSDT\" } },\n  { json: { symbol: \"ZENUSDT\" } },\n  { json: { symbol: \"SCUSDT\" } },\n  { json: { symbol: \"CTSIUSDT\" } },\n  { json: { symbol: \"CELRUSDT\" } },\n  { json: { symbol: \"DENTUSDT\" } },\n  { json: { symbol: \"REEFUSDT\" } },\n  { json: { symbol: \"TUSDT\" } },\n  { json: { symbol: \"SFPUSDT\" } },\n  { json: { symbol: \"CHRUSDT\" } }\n];\n"
+      },
+      "name": "110 Coini Belirle",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        -1216
+      ],
+      "id": "a30cb20e-46b7-4101-b3d9-84d6a7a71c48"
+    }
+  ],
+  "connections": {
+    "Binance Klines Al": {
+      "main": [
+        [
+          {
+            "node": "Teknik Analiz Kodla",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Teknik Analiz Kodla": {
+      "main": [
+        [
+          {
+            "node": "Sadece Al-Sat Sinyali Olanlar ( Filtre )",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sadece Al-Sat Sinyali Olanlar ( Filtre )": {
+      "main": [
+        [
+          {
+            "node": "Telegram Mesaj At",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4 Saatte Bir Çalış": {
+      "main": [
+        [
+          {
+            "node": "41 Coini Belirle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "41 Coini Belirle": {
+      "main": [
+        [
+          {
+            "node": "Binance Klines Al",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d07918c39cd11476428296c3c689d11702aa5dfadaa6622df4cd46e56a381aa9"
+  }
+}
